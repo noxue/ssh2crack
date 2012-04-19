@@ -3,8 +3,10 @@
 
 #include "list.h"
 
+#define SLAB
+
 #define SSH2CRACK_BANNER	"SSH2CRACK"
-#define SSH2CRACK_VERSION	"v0.05"
+#define SSH2CRACK_VERSION	"v0.06"
 #define SSH2CRACK_AUTHOR	"Copyright (c) wzt 2008-2012"
 #define SSH2CRACK_DESC		"SSH Remote Passwd Crack Tool"
 

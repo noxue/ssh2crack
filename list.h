@@ -66,8 +66,8 @@ static inline int list_empty(struct list_head *head)
                 q = s->next;                                    \
                 p = list_entry(s, type, list);                  \
                 if (p) {                                        \
-                        list_del(s);                           \
-                        free(p);                                \
+                        list_del(s);                           	\
+			kmem_cache_free(worker_cache, p);	\
                         p = NULL;                               \
                 }                                               \
         }}

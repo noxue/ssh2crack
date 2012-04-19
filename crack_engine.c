@@ -16,9 +16,13 @@
 #include <pthread.h>
 
 #include "list.h"
+#include "slab.h"
 #include "ssh2crack.h"
 #include "thread_pool.h"
 #include "debug.h"
+
+extern struct thread_mem *main_thread_mem;
+extern struct slab_cache *user_cache, *host_cache, *worker_cache;
 
 THREAD_POOL *thread_pool = NULL;
 pthread_mutex_t list_lock;
@@ -35,7 +39,7 @@ char *play[5] = {"|", "/", "-", "\\", NULL};
 typedef int (*crack_fn)(char *, unsigned int, unsigned int, char*, char *);
 
 /**
- * Create thread list and start it.
+ * Create thread pool and start it.
  */
 int init_thread_pool(int thread_num)
 {
@@ -94,20 +98,48 @@ free_thread_pool:
 	return -1;
 }
 
+THREAD_WORKER *alloc_worker_node(void)
+{
+	THREAD_WORKER *new_worker = NULL;
+
+#ifdef SLAB
+	new_worker = (THREAD_WORKER *)kmem_cache_alloc(worker_cache);
+	if (!new_worker) {
+		fprintf(stderr, "Malloc failed.\n");
+		return NULL;
+	}
+#else
+	new_worker = (THREAD_WORKER *)malloc(sizeof(THREAD_WORKER));
+	if (!new_worker) {
+		fprintf(stderr, "Malloc failed.\n");
+		return NULL;
+	}
+#endif
+	memset((void *)new_worker, '\0', sizeof(THREAD_WORKER));
+
+	return new_worker;
+}
+
+void free_worker(THREAD_WORKER *worker)
+{
+#ifdef SLAB
+	kmem_cache_free(worker_cache, (void *)worker);
+#else
+	free(worker);
+#endif
+}
+
 /**
- * Add a worker to wait queue.
+ * push a worker to wait queue.
  */
-int add_worker(crack_fn fn, CRACK_HOST *host_p, CRACK_USER *user_p, char *ip, 
+int push_worker(crack_fn fn, CRACK_HOST *host_p, CRACK_USER *user_p, char *ip, 
 		unsigned int port, char *user, char *passwd)
 {
 	THREAD_WORKER *new_worker = NULL;
 
-	new_worker = (THREAD_WORKER *)malloc(sizeof(THREAD_WORKER));
-	if (!new_worker) {
-		fprintf(stderr, "Malloc failed.\n");
-		return 0;
-	}
-	memset((void *)new_worker, '\0', sizeof(THREAD_WORKER));
+	new_worker = alloc_worker_node();
+	if (!new_worker)
+		return -1;
 
 	new_worker->do_crack = fn;
 	new_worker->crack_host = host_p;
@@ -125,7 +157,20 @@ int add_worker(crack_fn fn, CRACK_HOST *host_p, CRACK_USER *user_p, char *ip,
 
 	pthread_cond_signal(&(thread_pool->queue_ready));
 
-	return 1;
+	return 0;
+}
+
+THREAD_WORKER *pop_worker(struct list_head *list_head)
+{
+	THREAD_WORKER *worker = NULL;
+	struct list_head *p = NULL;
+
+	worker = list_entry(list_head->next, THREAD_WORKER, list);		
+	if (!worker)
+		return NULL;
+
+	list_del(list_head->next);
+	return worker;
 }
 
 void print_worker_list(void)
@@ -191,14 +236,12 @@ void *worker_thread(void *arg)
 		}
 
 		/* Get a worker from the queue. */
-		worker = list_entry((&(thread_pool->worker_list_head))->next,
-			THREAD_WORKER, list);		
+		worker = pop_worker((&(thread_pool->worker_list_head)));
 		if (!worker) {
 			pthread_mutex_unlock(&(thread_pool->queue_lock));
 			continue;
 		}
-
-		list_del(((&(thread_pool->worker_list_head))->next));
+			
 		thread_pool->curr_worker_num--;
 		current_job++;
 		pthread_mutex_unlock(&(thread_pool->queue_lock));
@@ -208,7 +251,6 @@ void *worker_thread(void *arg)
 			pthread_mutex_lock(&(thread_pool->queue_lock));
 			if (!worker->crack_host->user_map[worker->crack_user->index]) {
 				pthread_mutex_unlock(&(thread_pool->queue_lock));
-	
 				ret = worker->do_crack(worker->ip, worker->port, ssh2crack_arg->timeout, 
 						worker->user, worker->passwd);
 				if (!ret) {
@@ -222,7 +264,7 @@ void *worker_thread(void *arg)
 			else {
 				pthread_mutex_unlock(&(thread_pool->queue_lock));
 			}
-			free(worker);
+			free_worker(worker);
 		}
 		worker = NULL;
 	}
@@ -327,7 +369,7 @@ void *add_all_worker_thread(void *arg)
 						if (passwd_s) {
 							test_queue_num();
 							/* add it to worker queue. */
-							add_worker(ssh2_connect, host_s, user_s, 
+							push_worker(ssh2_connect, host_s, user_s, 
 								host_s->data, SSH_PORT, 
 								user_s->data, passwd_s->data);
 						}

@@ -5,116 +5,22 @@
 #include <unistd.h>
 #include <fcntl.h>
 #include <signal.h>
+#include <assert.h>
 #include <libssh/libssh.h>
 #include <libssh/callbacks.h>
 
 #include "libsock.h"
+#include "slab.h"
 #include "thread_pool.h"
 #include "ssh2crack.h"
+
+struct thread_mem *main_thread_mem;
+struct slab_cache *user_cache, *host_cache, *worker_cache;
+struct list_head thread_mem_list_head;
 
 int host_list_len = 0;
 int user_list_len = 0;
 int passwd_list_len = 0;
-
-int interactive_auth(ssh_session session, char *passwd)
-{
-	char echo = 0, *s = "blah\n";
-	char *name, *instruction, *prompt;
-	int x = 0, n = 0, i = 0;
-
-	x = ssh_userauth_kbdint(session, NULL, NULL);
-	while (x == SSH_AUTH_INFO) {
-		name = (char *)ssh_userauth_kbdint_getname(session);
-		instruction = (char *)ssh_userauth_kbdint_getinstruction(session);
-		n = ssh_userauth_kbdint_getnprompts(session);
-	
-		for (i = 0; i < n; i++) {
-			prompt = (char *)ssh_userauth_kbdint_getprompt(session, i, &echo);
-			if (echo) {
-				if (ssh_userauth_kbdint_setanswer(session, i, s) < 0)
-					return -1;
-			}
-			else {
-				if (ssh_userauth_kbdint_setanswer(session, i, passwd) < 0)
-					return -1;
-			}
-		}
-		x = ssh_userauth_kbdint(session, NULL, NULL);
-		if (x == SSH_AUTH_SUCCESS)
-			return 0;
-	}
-
-	return -1;
-}
-
-int password_auth(ssh_session session, char *passwd)
-{
-	int ret;
-
-	ret = ssh_userauth_password(session, NULL, passwd);
-	if (ret == SSH_AUTH_SUCCESS)
-		return 0;
-		
-	return -1;
-}
-
-
-int ssh_auth_methods(ssh_session session, char *passwd)
-{
-	int method = 0;
-	int ret = -1, x;
-
-	x = ssh_userauth_none(session, NULL);
-	method = ssh_userauth_list(session, NULL);
-
-	if (method & SSH_AUTH_METHOD_PASSWORD) {
-		ret = password_auth(session, passwd);
-	}
-	else if (method & SSH_AUTH_METHOD_INTERACTIVE) {
-		ret = interactive_auth(session, passwd);
-	}
-	else {
-		fprintf(stderr, "[-] Unknown authtication method.\n");
-	}
-
-	return ret;
-
-}
-
-int ssh2_connect(char *ip, unsigned int port, unsigned int timeout, 
-		char *user, char *passwd)
-{
-	ssh_session session = NULL;
-	const char *identity = "SUXX";
-	int ret;
-
-	session = ssh_new();
-	if (!session) {
-		fprintf(stderr, "[-] Create ssh session failed.\n");
-		return -1;
-	}
-
-	ssh_options_set(session, SSH_OPTIONS_HOST, ip);
-	ssh_options_set(session, SSH_OPTIONS_PORT, (uint16_t *)&port);
-	ssh_options_set(session, SSH_OPTIONS_USER, user);
-	ssh_options_set(session, SSH_OPTIONS_IDENTITY, identity);
-	ssh_options_set(session, SSH_OPTIONS_TIMEOUT, &timeout);
-
-	ret = ssh_connect(session);
-	if (ret != SSH_OK) {
-		//fprintf(stderr, "%s\n", ssh_get_error(session));
-		ssh_free(session);
-		return -1;
-	}
-	//fprintf(stdout, "[+] Connect %s ok.\n", ip);
-
-	ret = ssh_auth_methods(session, passwd);
-
-	ssh_disconnect(session);
-	ssh_free(session);
-
-	return ret;
-}
 
 SSH2CRACK_OPT *init_opt(void)
 {
@@ -155,11 +61,19 @@ CRACK_USER *alloc_user_node(void)
 {
 	CRACK_USER *crack_node = NULL;
 
+#ifdef SLAB
+	crack_node = (CRACK_USER *)kmem_cache_alloc(user_cache);
+	if (!crack_node) {
+		fprintf(stdout, "[-] Malloc failed.\n");
+		return NULL;
+	}
+#else
 	crack_node = (CRACK_USER *)malloc(sizeof(CRACK_USER));
 	if (!crack_node) {
 		fprintf(stdout, "[-] Malloc failed.\n");
 		return NULL;
 	}
+#endif
 	memset((void *)crack_node, '\0', sizeof(CRACK_USER));
 
 	return crack_node;
@@ -175,11 +89,19 @@ CRACK_HOST *alloc_host_node(void)
 {
 	CRACK_HOST *crack_node = NULL;
 
+#ifdef SLAB
+	crack_node = (CRACK_HOST *)kmem_cache_alloc(host_cache);
+	if (!crack_node) {
+		fprintf(stdout, "[-] Malloc failed.\n");
+		return NULL;
+	}
+#else
 	crack_node = (CRACK_HOST *)malloc(sizeof(CRACK_HOST));
 	if (!crack_node) {
 		fprintf(stdout, "[-] Malloc failed.\n");
 		return NULL;
 	}
+#endif
 	memset((void *)crack_node, '\0', sizeof(CRACK_HOST));
 
 	return crack_node;
@@ -437,6 +359,26 @@ void ssh2crack_usage(char *proc_name)
 			proc_name);
 }
 
+void ssh2crack_mem_init(void)
+{
+	INIT_LIST_HEAD(&thread_mem_list_head);
+
+	main_thread_mem = mem_cache_init(NULL, SLAB_SIZE_NUM);
+	assert(main_thread_mem != NULL);
+
+	user_cache = kmem_cache_create(main_thread_mem, "user_cache", 
+		sizeof(CRACK_USER));
+	assert(user_cache != NULL);
+
+	host_cache = kmem_cache_create(main_thread_mem, "host_cache", 
+		sizeof(CRACK_HOST));
+	assert(host_cache != NULL);
+
+	worker_cache = kmem_cache_create(main_thread_mem, "worker_cache", 
+		sizeof(THREAD_WORKER));
+	assert(host_cache != NULL);
+}
+
 int main(int argc, char **argv)
 {
 	int c;
@@ -449,6 +391,8 @@ int main(int argc, char **argv)
 	if (!(user_opt = init_opt()) || !(host_opt = init_opt()) ||
 		!(passwd_opt = init_opt()) || !(ssh2crack_arg = init_arg()))
 		return -1;
+
+	ssh2crack_mem_init();
 
 	while ((c = getopt(argc, argv, "l:L:h:H:p:P:o:t:n:d:vV")) != -1) {
 		switch (c) {
