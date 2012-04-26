@@ -2,7 +2,7 @@
  * Crack_engine.c 
  * 	
  * Crack engine is a thread pool that schedule threads to call 
- * certain scan function.
+ * certain crack module.
  *
  * 2012 by wzt (c)	http://www.cloud-sec.org
  *
@@ -35,8 +35,6 @@ int crack_match_flag = 0;
 int count_play = 0;
 int current_job = 0;
 char *play[5] = {"|", "/", "-", "\\", NULL};
-
-typedef int (*crack_fn)(char *, unsigned int, unsigned int, char*, char *);
 
 /**
  * Create thread pool and start it.

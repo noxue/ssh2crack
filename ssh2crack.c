@@ -13,6 +13,7 @@
 #include "slab.h"
 #include "thread_pool.h"
 #include "ssh2crack.h"
+#include "ssh.h"
 
 struct thread_mem *main_thread_mem;
 struct slab_cache *user_cache, *host_cache, *worker_cache;
@@ -347,6 +348,8 @@ void ssh2crack_usage(char *proc_name)
 			"  -H\t\ttarget host list.\n"
 			"  -p\t\tsingle password.\n"
 			"  -P\t\tpassword file list.\n"
+			"  -m\t\tmodule name: ssh, ftp.\n"
+			"  -e\t\tprint module list.\n"
 			"  -o\t\tlog file, default is log\n"
 			"  -t\t\ttimeout, deafult is 5 second.\n"
 			"  -n\t\tthread nums, default is 5.\n"
@@ -379,6 +382,95 @@ void ssh2crack_mem_init(void)
 	assert(host_cache != NULL);
 }
 
+void print_module_list(struct list_head *list_head)
+{
+        CRACK_MODULE *s = NULL;
+        struct list_head *p = NULL;
+
+	fprintf(stdout, "Current crack module:\n\n");
+        list_for_each(p, list_head) {
+                s = list_entry(p, CRACK_MODULE, list);
+                if (s) {
+                        printf("%s\n", s->name);
+                }
+        }
+}
+
+int register_crack_module(char *module_name, crack_fn fn, unsigned int timeout,
+		unsigned int port)
+{
+	CRACK_MODULE *crack_module;
+
+	crack_module = (CRACK_MODULE *)malloc(sizeof(CRACK_MODULE));
+	if (!crack_module) {
+		fprintf(stderr, "malloc failed.\n");
+		return -1;
+	}
+
+	strcpy(crack_module->name, module_name);
+	crack_module->timeout = timeout;
+	crack_module->port = port;
+	crack_module->crack_cb = fn;
+
+	list_add_tail(&(crack_module->list), &(crack_module_mnt->list_head));
+	return 0;
+}
+
+int unregister_crack_module(char *module_name)
+{
+	
+
+}
+
+int __parse_crack_module(char *module_name)
+{
+	if (!strcmp(module_name, "ssh")) {
+		return register_crack_module(module_name, ssh2_connect, 
+				SSH_TIMEOUT, SSH_PORT);
+	}
+	else if (!strcmp(module_name, "ftp")) {
+		
+	}
+
+	return -1;
+}
+
+int parse_crack_module(char *arg)
+{
+	char tmp[64];
+	char *s, *p;
+
+	s = arg; p = tmp; 
+	while (*s) {
+		if (*s == ',') {
+			*p = '\0';
+			printf("%s\n", tmp);
+			if (__parse_crack_module(tmp) == -1) {
+				fprintf(stderr, "Register module %s failed.\n", tmp);
+				return -1;
+			}
+			memset(tmp, '\0', 64);
+			p = tmp; s++;
+			continue;
+		}
+		*p = *s++;
+	}
+	
+	return 0;	
+}
+
+void crack_module_init(void)
+{
+	crack_module_mnt = (CRACK_MODULE_MNT *)malloc(sizeof(CRACK_MODULE_MNT));
+	if (!crack_module_mnt) {
+		fprintf(stderr, "malloc failed.\n");
+		exit(-1);
+	}
+
+	crack_module_mnt->module_num = 0;
+	INIT_LIST_HEAD(&(crack_module_mnt->list_head));
+}
+
 int main(int argc, char **argv)
 {
 	int c;
@@ -393,8 +485,9 @@ int main(int argc, char **argv)
 		return -1;
 
 	ssh2crack_mem_init();
+	crack_module_init();
 
-	while ((c = getopt(argc, argv, "l:L:h:H:p:P:o:t:n:vV:d")) != -1) {
+	while ((c = getopt(argc, argv, "l:L:h:H:p:P:o:t:m:e:n:vV:d")) != -1) {
 		switch (c) {
 		case 'l':
 			if (handle_user_arg(optarg) == -1)
@@ -419,6 +512,13 @@ int main(int argc, char **argv)
 		case 'P':
 			if (handle_passwd_list_arg(optarg) == -1)
 				return -1;
+			break;
+		case 'm':
+			if (parse_crack_module(optarg) == -1)
+				return -1;
+			break;
+		case 'e':
+			print_module_list(&(crack_module_mnt->list_head));
 			break;
 		case 'o':
 			memset(ssh2crack_arg->log, '\0', 128);

@@ -6,7 +6,7 @@
 #define SLAB
 
 #define SSH2CRACK_BANNER	"SSH2CRACK"
-#define SSH2CRACK_VERSION	"v0.06"
+#define SSH2CRACK_VERSION	"v0.08"
 #define SSH2CRACK_AUTHOR	"Copyright (c) wzt 2008-2012"
 #define SSH2CRACK_DESC		"SSH Remote Passwd Crack Tool"
 
@@ -62,8 +62,24 @@ typedef struct ssh2crack_opt {
 	struct list_head list_head;
 }SSH2CRACK_OPT;
 
+typedef int (*crack_fn)(char *, unsigned int, unsigned int, char*, char *);
+
+typedef struct crack_module {
+	char name[64];
+	unsigned int timeout;
+	unsigned int port;
+	crack_fn crack_cb;
+	struct list_head list;
+}CRACK_MODULE;
+
+typedef struct crack_module_mnt {
+	int module_num;
+	struct list_head list_head;
+}CRACK_MODULE_MNT;
+
 SSH2CRACK_ARG *ssh2crack_arg;
 SSH2CRACK_OPT *user_opt, *host_opt, *passwd_opt;
+CRACK_MODULE_MNT *crack_module_mnt;
 pthread_mutex_t file_lock;
 
 FILE *result_fp;
