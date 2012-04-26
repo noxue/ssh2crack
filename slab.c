@@ -452,7 +452,7 @@ void *kmem_cache_alloc(struct slab_cache *slab_cache)
 			pthread_mutex_unlock(&(slab_cache->thread->slab_lock));
 			return NULL;
 		}
-		printf("expand slab ok.\n");
+		//printf("expand slab ok.\n");
 		obj = get_slab_obj(s, slab_cache);
 		pthread_mutex_unlock(&(slab_cache->thread->slab_lock));
 		return obj;

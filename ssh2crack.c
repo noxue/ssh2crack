@@ -394,7 +394,7 @@ int main(int argc, char **argv)
 
 	ssh2crack_mem_init();
 
-	while ((c = getopt(argc, argv, "l:L:h:H:p:P:o:t:n:d:vV")) != -1) {
+	while ((c = getopt(argc, argv, "l:L:h:H:p:P:o:t:n:vV:d")) != -1) {
 		switch (c) {
 		case 'l':
 			if (handle_user_arg(optarg) == -1)
