@@ -1,6 +1,9 @@
 /*
  * trace.c (c) 2012 wzt		http://www.cloud-sec.org
  *
+ * use bp register pointer to compute function call chain.
+ *
+ * XXX: Doesn't work with gcc option -fomit-frame-pointer or -O2.
  */
 
 #include <stdio.h>
@@ -42,11 +45,63 @@ static struct stat elf_stat;
 static char *strtab_buffer;
 static int symtab_num;
 
+unsigned long compute_sigsegv_func_addr(unsigned long rip)
+{
+	unsigned long func_addr = 0;
+	unsigned long offset = 0;
+
+	offset = *(unsigned long *)(rip - 4);
+	//printf("%x\n", offset);
+	func_addr = offset + rip;
+	//printf("%x\n", func_addr);
+	return func_addr;
+}
+
 void signal_handler(int sig_num, siginfo_t *sig_info, void *ptr)
 {
-	assert(sig_info != NULL);
+	unsigned long *rbp;
+	unsigned long rip = 0;
+	unsigned long func_ip = 0;
+	int first_bp = 0;
+	char *symbol_name;
 
-	calltrace();
+	assert(sig_info != NULL);
+        printf("Got SEGSEV at addr: %p\n", sig_info->si_addr);
+	printf("Call trace:\n\n");
+
+	GET_BP(rbp);
+	while (rbp != top_rbp) {
+		//printf("rbp = 0x%x\n", rbp);
+		rip = *(unsigned long *)(rbp + 1);
+		//printf("eip = 0x%x\n", rip);
+		rbp = (unsigned long *)*rbp;
+		if (first_bp == 1) {
+			/* XXX: We can't get the ip addr that casue
+ 			 * the segfault, the signal handler will destroy
+			 * the ip value in the stack. To solve this problem
+			 * we can compute the eip from the prev callchain.
+			 * Exp:
+			 * 402b16: e8 62 ff ff ff callq  402a7d <test>
+			 * abstract the offset that callq used, than compute
+			 * the real function addr:
+			 * dst_addr = offset + src_addr + opcode_len
+			 * but with this fix, we just find the function addr
+			 * that casued the segfalt, still can't find the real
+ 			 * ip addr. Any better way?
+			 */
+			rip = compute_sigsegv_func_addr(rip);
+			//printf("eip = 0x%x\n", rip);
+			__search_symbol_by_addr(rip);
+		}
+		else {
+			search_symbol_by_addr(rip);
+		}
+		first_bp++;
+	}
+	rip = *(unsigned long *)(rbp + 1);
+	search_symbol_by_addr(rip);
+	printf("\n");
+
 	exit(-1);
 }
 
@@ -67,6 +122,9 @@ void calltrace(void)
 		if (search_symbol_by_addr(rip) == -1)
 			return ;
 	}
+	rip = *(unsigned long *)(rbp + 1);
+	if (search_symbol_by_addr(rip) == -1)
+		return ;
 	printf("\n");
 }
 
@@ -92,23 +150,41 @@ void show_calltrace(char *symbol_name, unsigned long symbol_addr,
 	printf("%s", buff);
 }
 
-char *search_symbol_by_addr(unsigned long addr)
+int search_symbol_by_addr(unsigned long addr)
 {
 	int i;
 
 	for (i = 0; i < symtab_num; i++) {
-		if (symtab_ptr[i].st_value < addr &&
-			symtab_ptr[i].st_value + symtab_ptr[i].st_size > addr) {
+		if (symtab_ptr[i].st_value <= (unsigned int)addr &&
+			symtab_ptr[i].st_value + symtab_ptr[i].st_size >= (unsigned int)addr) {
 			show_calltrace(strtab_buffer + symtab_ptr[i].st_name,
 					symtab_ptr[i].st_value,
 					symtab_ptr[i].st_size,
 					addr);
-			return ;
+			return 0;
 		}
 	}
 	//printf("not found.\n");
 
-	return NULL;
+	return -1;
+}
+
+int __search_symbol_by_addr(unsigned long addr)
+{
+	int i;
+
+	for (i = 0; i <= symtab_num; i++) {
+		if (symtab_ptr[i].st_value == (unsigned int)addr) {
+			show_calltrace(strtab_buffer + symtab_ptr[i].st_name,
+					symtab_ptr[i].st_value,
+					symtab_ptr[i].st_size,
+					addr);
+			return 0;
+		}
+	}
+	printf("not found.\n");
+
+	return -1;
 }
 
 void print_symtab(void)
@@ -280,7 +356,8 @@ int init_calltrace(void)
 		return -1;
 
 	/* We just want to use the strtab_ptr & symtab_str that has allocated 
-	   above, so we can munmap the file now.*/ 
+	 * above, so we can munmap the file now.
+	 */ 
 	free_elf_mmap();
 
 	return 0; 

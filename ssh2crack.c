@@ -424,11 +424,11 @@ int register_crack_module(char *module_name, crack_fn fn, unsigned int timeout,
 	crack_module->port = port;
 	crack_module->crack_cb = fn;
 
+	test();
 	list_add_tail(&(crack_module->list), &(crack_module_mnt->list_head));
 
-	calltrace();
-	test();
-
+	//calltrace();
+	
 	return 0;
 }
 
