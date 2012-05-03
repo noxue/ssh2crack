@@ -13,6 +13,7 @@
 #include <string.h>
 #include <fcntl.h>
 #include <unistd.h>
+#include <assert.h>
 #include <pthread.h>
 
 #include "list.h"
@@ -346,30 +347,39 @@ int check_host_status(CRACK_HOST *host_p)
  */
 void *add_all_worker_thread(void *arg)
 {
+	CRACK_MODULE *crack_module = NULL;
 	CRACK_HOST *host_s = NULL;
 	CRACK_USER *user_s = NULL; 
 	CRACK_PASSWD *passwd_s = NULL;
 	struct list_head *host_p = NULL;
 	struct list_head *user_p = NULL;
 	struct list_head *passwd_p = NULL;
+	struct list_head *module_p = NULL;
 
-	/* list all host node. */
-	list_for_each(host_p, (&(host_opt->list_head))) {
-		host_s = list_entry(host_p, CRACK_HOST, list);
-		if (host_s) {
-			/* list all user node. */
-			list_for_each(user_p, (&(user_opt->list_head))) {
-				user_s = list_entry(user_p, CRACK_USER, list);
-				if (user_s) {
-					/* list all passwd node. */
-					list_for_each(passwd_p, (&(passwd_opt->list_head))) {
-						passwd_s = list_entry(passwd_p, CRACK_PASSWD, list);
-						if (passwd_s) {
-							test_queue_num();
-							/* add it to worker queue. */
-							push_worker(ssh2_connect, host_s, user_s, 
-								host_s->data, SSH_PORT, 
-								user_s->data, passwd_s->data);
+	/* list all crack module. */
+	list_for_each(module_p, (&(crack_module_mnt->list_head))) {
+		crack_module = list_entry(module_p, CRACK_MODULE, list);
+		assert(crack_module->crack_cb);
+		if (crack_module) {
+			/* list all host node. */
+			list_for_each(host_p, (&(host_opt->list_head))) {
+				host_s = list_entry(host_p, CRACK_HOST, list);
+				if (host_s) {
+					/* list all user node. */
+					list_for_each(user_p, (&(user_opt->list_head))) {
+						user_s = list_entry(user_p, CRACK_USER, list);
+						if (user_s) {
+							/* list all passwd node. */
+							list_for_each(passwd_p, (&(passwd_opt->list_head))) {
+								passwd_s = list_entry(passwd_p, CRACK_PASSWD, list);
+								if (passwd_s) {
+									test_queue_num();
+									/* add it to worker queue. */
+									push_worker(crack_module->crack_cb, host_s, user_s, 
+										host_s->data, crack_module->port, 
+										user_s->data, passwd_s->data);
+								}
+							}
 						}
 					}
 				}

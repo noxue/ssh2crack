@@ -1,3 +1,8 @@
+/*
+ * ssh2crack.c	(c) 2012 wzt http://www.cloud-sec.org
+ *
+ */
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdint.h>
@@ -14,6 +19,7 @@
 #include "thread_pool.h"
 #include "ssh2crack.h"
 #include "ssh.h"
+#include "trace.h"
 
 struct thread_mem *main_thread_mem;
 struct slab_cache *user_cache, *host_cache, *worker_cache;
@@ -340,7 +346,7 @@ void ssh2crack_usage(char *proc_name)
 
 	fprintf(stdout, "\n%s [-l USER|-L USER.lst] [-h HOST|-H HOST.lst] "
 			"[-p PASSWORD|-P PASSWORD.lst] [-o log] [-t timeout]"
-			" [-n threads] [-v|V] [-d]\n\n"
+			" [-n threads] [-v|V] [-d] [-m] [-e]\n\n"
 			"Options:\n"
 			"  -l\t\tlogin user name.\n"
 			"  -L\t\tlogin user file list.\n"
@@ -396,6 +402,12 @@ void print_module_list(struct list_head *list_head)
         }
 }
 
+void test()
+{
+	int *p = 0x12345678;
+	*p = 1;
+}
+
 int register_crack_module(char *module_name, crack_fn fn, unsigned int timeout,
 		unsigned int port)
 {
@@ -413,18 +425,37 @@ int register_crack_module(char *module_name, crack_fn fn, unsigned int timeout,
 	crack_module->crack_cb = fn;
 
 	list_add_tail(&(crack_module->list), &(crack_module_mnt->list_head));
+
+	calltrace();
+	test();
+
 	return 0;
 }
 
 int unregister_crack_module(char *module_name)
 {
-	
+        CRACK_MODULE *s = NULL;
+        struct list_head *p = NULL;
 
+        list_for_each(p, (&crack_module_mnt->list_head)) {
+                s = list_entry(p, CRACK_MODULE, list);
+                if (s && !strcmp(s->name, module_name)) {
+			list_del(p);
+			free(s);
+			return 0;
+                }
+        }
+	
+	return -1;
 }
 
 int __parse_crack_module(char *module_name)
 {
+	//calltrace();
 	if (!strcmp(module_name, "ssh")) {
+		ssh_threads_set_callbacks(ssh_threads_get_pthread());
+		ssh_init();
+
 		return register_crack_module(module_name, ssh2_connect, 
 				SSH_TIMEOUT, SSH_PORT);
 	}
@@ -444,7 +475,7 @@ int parse_crack_module(char *arg)
 	while (*s) {
 		if (*s == ',') {
 			*p = '\0';
-			printf("%s\n", tmp);
+			printf("!%s\n", tmp);
 			if (__parse_crack_module(tmp) == -1) {
 				fprintf(stderr, "Register module %s failed.\n", tmp);
 				return -1;
@@ -453,9 +484,14 @@ int parse_crack_module(char *arg)
 			p = tmp; s++;
 			continue;
 		}
-		*p = *s++;
+		*p++ = *s++;
 	}
-	
+	*p = '\0';
+	if (__parse_crack_module(tmp) == -1) {
+		fprintf(stderr, "Register module %s failed.\n", tmp);
+		return -1;
+	}
+
 	return 0;	
 }
 
@@ -471,6 +507,27 @@ void crack_module_init(void)
 	INIT_LIST_HEAD(&(crack_module_mnt->list_head));
 }
 
+#define DESTROY_MODULE(type, link_head) {	               	\
+        type *p = NULL;                                         \
+        struct list_head *s = NULL;                             \
+        struct list_head *q = NULL;                             \
+        for (s = (&link_head)->next; s != &link_head; s = q) {  \
+                if (!s)                                         \
+                        return ;                                \
+                q = s->next;                                    \
+                p = list_entry(s, type, list);                  \
+                if (p) {                                        \
+                        list_del(s);                            \
+                        free(p);		          	\
+                        p = NULL;                               \
+                }                                               \
+        }}
+
+void crack_module_destroy(void)
+{
+	DESTROY_MODULE(CRACK_MODULE, crack_module_mnt->list_head);
+}
+
 int main(int argc, char **argv)
 {
 	int c;
@@ -478,6 +535,11 @@ int main(int argc, char **argv)
 	if (argc == 1) {
 		ssh2crack_usage(argv[0]);
 		return 0;
+	}
+
+	if (init_calltrace() == -1) {
+		fprintf(stderr, "calltrace init failed.\n");
+		return -1;
 	}
 
 	if (!(user_opt = init_opt()) || !(host_opt = init_opt()) ||
@@ -547,11 +609,12 @@ int main(int argc, char **argv)
 	signal(SIGINT, handle_sigint);
 
 	init_log(ssh2crack_arg->log);
-	ssh_threads_set_callbacks(ssh_threads_get_pthread());
-	ssh_init();
-
 	display_status();
 /*
+	print_module_list(&(crack_module_mnt->list_head));
+	unregister_crack_module("ssh");
+	print_module_list(&(crack_module_mnt->list_head));
+
 	printf("----------------\n");
 	print_list(&(user_opt->list_head));
 	printf("----------------\n");
@@ -573,6 +636,8 @@ int main(int argc, char **argv)
 	sleep(1);
 	wait_all_thread_finsh();
 	fclose(result_fp);
+	crack_module_destroy();
+	exit_calltrace();
 
 	return 0;
 }

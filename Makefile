@@ -6,7 +6,7 @@ CFLAGS	= -g
 .c.o: 	$(CC) $(CFLAGS) \
 	-c -o $*.o $<
 
-OBJS = 	ssh2crack.o crack_engine.o ssh.o libsock.o slab.o
+OBJS = 	ssh2crack.o crack_engine.o ssh.o libsock.o slab.o trace.o
 
 ssh2crack: $(OBJS)
 	$(CC) -o ssh2crack $(OBJS) -lssh -lssh_threads -lpthread
