@@ -66,7 +66,7 @@ void signal_handler(int sig_num, siginfo_t *sig_info, void *ptr)
 	char *symbol_name;
 
 	assert(sig_info != NULL);
-        printf("Got SEGSEV at addr: %p\n", sig_info->si_addr);
+        printf("\nPid: %d segfault at addr: %p\n", getpid(), sig_info->si_addr);
 	printf("Call trace:\n\n");
 
 	GET_BP(rbp);

@@ -35,7 +35,7 @@ SSH2CRACK_OPT *init_opt(void)
 
 	crack_opt = (SSH2CRACK_OPT *)malloc(sizeof(SSH2CRACK_OPT));
 	if (!crack_opt) {
-		fprintf(stdout, "[-] Malloc failed.\n");
+		error("[-] Malloc failed.\n");
 		return NULL;
 	}
 
@@ -52,7 +52,7 @@ SSH2CRACK_ARG *init_arg(void)
 
 	crack_arg = (SSH2CRACK_ARG *)malloc(sizeof(SSH2CRACK_ARG));
 	if (!crack_arg) {
-		fprintf(stdout, "[-] Malloc failed.\n");
+		error("Malloc failed.\n");
 		return NULL;
 	}
 
@@ -71,13 +71,13 @@ CRACK_USER *alloc_user_node(void)
 #ifdef SLAB
 	crack_node = (CRACK_USER *)kmem_cache_alloc(user_cache);
 	if (!crack_node) {
-		fprintf(stdout, "[-] Malloc failed.\n");
+		error("Malloc failed.\n");
 		return NULL;
 	}
 #else
 	crack_node = (CRACK_USER *)malloc(sizeof(CRACK_USER));
 	if (!crack_node) {
-		fprintf(stdout, "[-] Malloc failed.\n");
+		error("Malloc failed.\n");
 		return NULL;
 	}
 #endif
@@ -99,13 +99,13 @@ CRACK_HOST *alloc_host_node(void)
 #ifdef SLAB
 	crack_node = (CRACK_HOST *)kmem_cache_alloc(host_cache);
 	if (!crack_node) {
-		fprintf(stdout, "[-] Malloc failed.\n");
+		error("Malloc failed.\n");
 		return NULL;
 	}
 #else
 	crack_node = (CRACK_HOST *)malloc(sizeof(CRACK_HOST));
 	if (!crack_node) {
-		fprintf(stdout, "[-] Malloc failed.\n");
+		error("Malloc failed.\n");
 		return NULL;
 	}
 #endif
@@ -129,7 +129,7 @@ int init_user_list(char *file, SSH2CRACK_OPT *crack_opt)
 	while (fgets(buff, 128 ,fp) != NULL) {
 		crack_node = alloc_user_node();;
 		if (!crack_node) {
-			fprintf(stdout, "[-] Malloc failed.\n");
+			error("Malloc failed.\n");
 			return -1;
 		}
 
@@ -183,7 +183,7 @@ int init_host_list(char *file, SSH2CRACK_OPT *crack_opt)
         while (fgets(buff, 128 ,fp) != NULL) {
                 crack_node = alloc_host_node();
                 if (!crack_node) {
-                        fprintf(stdout, "[-] Malloc failed.\n");
+                        error("[-] Malloc failed.\n");
                         return -1;
                 }
 
@@ -415,7 +415,7 @@ int register_crack_module(char *module_name, crack_fn fn, unsigned int timeout,
 
 	crack_module = (CRACK_MODULE *)malloc(sizeof(CRACK_MODULE));
 	if (!crack_module) {
-		fprintf(stderr, "malloc failed.\n");
+		error("malloc failed.\n");
 		return -1;
 	}
 
@@ -424,7 +424,7 @@ int register_crack_module(char *module_name, crack_fn fn, unsigned int timeout,
 	crack_module->port = port;
 	crack_module->crack_cb = fn;
 
-	test();
+	//test();
 	list_add_tail(&(crack_module->list), &(crack_module_mnt->list_head));
 
 	//calltrace();
@@ -475,9 +475,9 @@ int parse_crack_module(char *arg)
 	while (*s) {
 		if (*s == ',') {
 			*p = '\0';
-			printf("!%s\n", tmp);
+			debug2("!%s\n", tmp);
 			if (__parse_crack_module(tmp) == -1) {
-				fprintf(stderr, "Register module %s failed.\n", tmp);
+				error("Register module %s failed.\n", tmp);
 				return -1;
 			}
 			memset(tmp, '\0', 64);
@@ -488,10 +488,12 @@ int parse_crack_module(char *arg)
 	}
 	*p = '\0';
 	if (__parse_crack_module(tmp) == -1) {
-		fprintf(stderr, "Register module %s failed.\n", tmp);
+		error("Register module %s failed.\n", tmp);
 		return -1;
 	}
 
+	debug2("register module %s ok.\n", tmp);
+	debug2("register module %s ok.\n", tmp);
 	return 0;	
 }
 
@@ -499,7 +501,7 @@ void crack_module_init(void)
 {
 	crack_module_mnt = (CRACK_MODULE_MNT *)malloc(sizeof(CRACK_MODULE_MNT));
 	if (!crack_module_mnt) {
-		fprintf(stderr, "malloc failed.\n");
+		__debug2("malloc failed.\n");
 		exit(-1);
 	}
 
@@ -536,6 +538,9 @@ int main(int argc, char **argv)
 		ssh2crack_usage(argv[0]);
 		return 0;
 	}
+
+	if (log_init() == -1)
+		return -1;
 
 	if (init_calltrace() == -1) {
 		fprintf(stderr, "calltrace init failed.\n");
