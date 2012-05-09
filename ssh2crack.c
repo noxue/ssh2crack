@@ -20,6 +20,7 @@
 #include "ssh2crack.h"
 #include "ssh.h"
 #include "trace.h"
+#include "log.h"
 
 struct thread_mem *main_thread_mem;
 struct slab_cache *user_cache, *host_cache, *worker_cache;
@@ -475,7 +476,7 @@ int parse_crack_module(char *arg)
 	while (*s) {
 		if (*s == ',') {
 			*p = '\0';
-			debug2("!%s\n", tmp);
+			__debug2("!%s\n", tmp);
 			if (__parse_crack_module(tmp) == -1) {
 				error("Register module %s failed.\n", tmp);
 				return -1;
@@ -493,7 +494,7 @@ int parse_crack_module(char *arg)
 	}
 
 	debug2("register module %s ok.\n", tmp);
-	debug2("register module %s ok.\n", tmp);
+	__debug2("register module %s ok.\n", tmp);
 	return 0;	
 }
 
@@ -628,7 +629,11 @@ int main(int argc, char **argv)
 	print_list(&(passwd_opt->list_head));
 	printf("----------------\n");
 */
+	int i;
+	for (i = 0; i < 150; i++)
+		debug2("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
 
+/*
 	if (ssh2crack_arg->daemon == 1)
 		daemon(0, 0);
 
@@ -643,6 +648,7 @@ int main(int argc, char **argv)
 	fclose(result_fp);
 	crack_module_destroy();
 	exit_calltrace();
+*/
 
 	return 0;
 }

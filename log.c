@@ -32,7 +32,7 @@ int log_init(void)
 
 	log_arg->log_level = LOG_DEBUG2;
 	log_arg->log_file_num = 10;
-	log_arg->log_size = 2 * 1024 * 1024;
+	log_arg->log_size = 1024;
 	strcpy(log_arg->log_path, "/var/log/ssh2crack");
 	pthread_mutex_init(&log_arg->log_lock, NULL);
 
@@ -63,38 +63,43 @@ int extract_log_num(void)
 
 	while (*s++);
 	s--;
-	printf("!%c\n", *s);
+	__debug2("!%c\n", *s);
 
-	while (*s-- != '.')
-	printf("!%c\n", *s);
+	while (*--s != '.')
+	__debug2("!%c\n", *s);
 
-	strcpy(tmp, s);
-	printf("!%s\n", tmp);
+	strcpy(tmp, s + 1);
+	__debug2("!%s\n", tmp);
 
 	return atoi(tmp);
 }
 
+/*
+ * already hold the log_lock.
+ */
 int expand_log(void)
 {
 	int log_num;
 	char buff[1024];
 
 	log_num = extract_log_num();
-	if (log_num > log_arg->log_file_num - 1)
+	__debug2("log num: %d\n", log_num);
+	if (log_num > log_arg->log_file_num - 1) {
+		__debug2("log num: %d\n", log_num);
 		return -1;
+	}
 
-	log_lock();
 	fclose(log_arg->log_fp);
 	snprintf(buff, sizeof(buff), "%s/log.%d", log_arg->log_path, log_num + 1);
+	__debug2("%s\n", buff);
+	memset(log_arg->curr_log, '\0', 1024);
+	strcpy(log_arg->curr_log, buff);
 	log_arg->log_fp = fopen(buff, "w+");
 	if (!log_arg->log_fp) {
-		perror("fopen");
-		log_unlock();
 		free(log_arg);
 		return -1;
 	}
 
-	log_unlock();
 	return 0;
 }
 
@@ -102,164 +107,58 @@ int check_log_size(void)
 {
 	struct stat f_stat;
 
-	log_lock();
 	if (stat(log_arg->curr_log, &f_stat) == -1) {
-		perror("stat");
-		log_unlock();
+		__debug2("stat failed.");
 		return -1;
 	}
+	__debug2("log size: %d\t%d\n", f_stat.st_size, log_arg->log_size);
 
 	if (f_stat.st_size >= log_arg->log_size) {
 		if (expand_log() == -1) {
-			log_unlock();
 			return -1;
 		}
 	}
 
-	log_unlock();
 	return 0;
 }
 
-void do_log(LOG_LEVEL log_level, int flag, char *file_name, int line,
-		va_list args, char *fmt)
+void do_log(LOG_LEVEL log_level, int flag, char *file_name, char *function,
+		int line, char *fmt, ...)
 {
 	struct tm *log_now;
 	time_t log_t;
+	va_list arg;
 	char buff[1024];
 
 	assert(log_arg->log_level != LOG_NOLEVEL);
 
-	if (log_level < log_arg->log_level)
+	if (log_level > log_arg->log_level)
 		return ;
 
 	time(&log_t);
 	log_now = localtime(&log_t);
 	snprintf(buff, sizeof(buff), 
-		"%04d-%02d-%02d %02d:%02d:%02d -- %s(%d):\t",
+		"%04d-%02d-%02d %02d:%02d:%02d -- %s:%s(%d):\t",
 		log_now->tm_year + 1900, log_now->tm_mon + 1, 
 		log_now->tm_mday, log_now->tm_hour, log_now->tm_min, 
-		log_now->tm_sec, file_name, line);
-	vsprintf(buff + strlen(buff), fmt, args);
+		log_now->tm_sec, file_name, function, line);
+	va_start(arg, fmt);
+	vsprintf(buff + strlen(buff), fmt, arg);
+	va_end(arg);
 
 	if (flag == LOG_STDOUT) {
 		fprintf(stdout, "%s\n", buff);
 		return ;
 	}
 
-	if (check_log_size() == -1)
-		return ;
-
 	log_lock();
-	fprintf(log_arg->log_fp, "%s", buff);
+	if (check_log_size() == -1) {
+		return ;
+		log_unlock();
+	}
+
+	fprintf(log_arg->log_fp, "%s\n", buff);
 	log_unlock();
-}
-
-void debug(char *fmt, ...)
-{
-	va_list args;
-
-	va_start(args, fmt);
-	do_log(LOG_DEBUG, LOG_FILE, __FILE__, __LINE__, args, fmt);
-	va_end(args);
-}
-
-void __debug(char *fmt, ...)
-{
-	va_list args;
-
-	va_start(args, fmt);
-	do_log(LOG_DEBUG, LOG_STDOUT, __FILE__, __LINE__, args, fmt);
-	va_end(args);
-}
-
-void debug1(char *fmt, ...)
-{
-	va_list args;
-
-	va_start(args, fmt);
-	do_log(LOG_DEBUG1, LOG_FILE, __FILE__, __LINE__, args, fmt);
-	va_end(args);
-}
-
-void __debug1(char *fmt, ...)
-{
-	va_list args;
-
-	va_start(args, fmt);
-	do_log(LOG_DEBUG1, LOG_STDOUT, __FILE__, __LINE__, args, fmt);
-	va_end(args);
-}
-
-void debug2(char *fmt, ...)
-{
-	va_list args;
-
-	va_start(args, fmt);
-	do_log(LOG_DEBUG2, LOG_FILE, __FILE__, __LINE__, args, fmt);
-	va_end(args);
-}
-
-void __debug2(char *fmt, ...)
-{
-	va_list args;
-
-	va_start(args, fmt);
-	do_log(LOG_DEBUG2, LOG_STDOUT, __FILE__, __LINE__, args, fmt);
-	va_end(args);
-}
-
-void fatal(char *fmt, ...)
-{
-	va_list args;
-
-	va_start(args, fmt);
-	do_log(LOG_FATAL, LOG_FILE, __FILE__, __LINE__, args, fmt);
-	va_end(args);
-}
-
-void __fatal(char *fmt, ...)
-{
-	va_list args;
-
-	va_start(args, fmt);
-	do_log(LOG_FATAL, LOG_STDOUT, __FILE__, __LINE__, args, fmt);
-	va_end(args);
-}
-
-void error(char *fmt, ...)
-{
-	va_list args;
-
-	va_start(args, fmt);
-	do_log(LOG_ERROR, LOG_FILE, __FILE__, __LINE__, args, fmt);
-	va_end(args);
-}
-
-void __error(char *fmt, ...)
-{
-	va_list args;
-
-	va_start(args, fmt);
-	do_log(LOG_ERROR, LOG_STDOUT, __FILE__, __LINE__, args, fmt);
-	va_end(args);
-}
-
-void info(char *fmt, ...)
-{
-	va_list args;
-
-	va_start(args, fmt);
-	do_log(LOG_INFO, LOG_FILE, __FILE__, __LINE__, args, fmt);
-	va_end(args);
-}
-
-void __info(char *fmt, ...)
-{
-	va_list args;
-
-	va_start(args, fmt);
-	do_log(LOG_INFO, LOG_STDOUT, __FILE__, __LINE__, args, fmt);
-	va_end(args);
 }
 
 void log_close(void)

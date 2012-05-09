@@ -32,17 +32,52 @@ typedef struct log_arg {
 void log_lock(void);
 void log_unlock(void);
 
-void debug(char *fmt, ...);
-void __debug(char *fmt, ...);
-void debug1(char *fmt, ...);
-void __debug1(char *fmt, ...);
-void debug2(char *fmt, ...);
-void __debug2(char *fmt, ...);
-void fatal(char *fmt, ...);
-void __fatal(char *fmt, ...);
-void error(char *fmt, ...);
-void __error(char *fmt, ...);
-void info(char *fmt, ...);
-void __info(char *fmt, ...);
+#define debug(fmt, ...)		do_log(LOG_DEBUG, LOG_FILE, __FILE__, 		\
+					__FUNCTION__, __LINE__,			\
+					fmt, ##__VA_ARGS__);
+
+#define __debug(fmt, ...)	do_log(LOG_DEBUG, LOG_STDOUT, __FILE__,		\
+					__FUNCTION__, __LINE__,			\
+					fmt, ##__VA_ARGS__);
+
+#define debug1(fmt, ...)	do_log(LOG_DEBUG1, LOG_FILE, __FILE__, 		\
+					__FUNCTION__, __LINE__,			\
+					fmt, ##__VA_ARGS__);
+
+#define __debug1(fmt, ...)	do_log(LOG_DEBUG1, LOG_STDOUT, __FILE__,	\
+					__FUNCTION__, __LINE__,			\
+					fmt, ##__VA_ARGS__);
+
+#define debug2(fmt, ...)	do_log(LOG_DEBUG2, LOG_FILE, __FILE__, 		\
+					__FUNCTION__, __LINE__,			\
+					fmt, ##__VA_ARGS__);
+
+#define __debug2(fmt, ...)	do_log(LOG_DEBUG2, LOG_STDOUT, __FILE__,	\
+					__FUNCTION__, __LINE__,			\
+					fmt, ##__VA_ARGS__);
+
+#define fatal(fmt, ...)		do_log(LOG_FATAL, LOG_FILE, __FILE__, 		\
+					__FUNCTION__, __LINE__,			\
+					fmt, ##__VA_ARGS__);
+
+#define __fatal(fmt, ...)	do_log(LOG_FATAL, LOG_STDOUT, __FILE__,		\
+					__FUNCTION__, __LINE__,			\
+					fmt, ##__VA_ARGS__);
+
+#define error(fmt, ...)		do_log(LOG_ERROR, LOG_FILE, __FILE__, 		\
+					__FUNCTION__, __LINE__,			\
+					fmt, ##__VA_ARGS__);
+
+#define __error(fmt, ...)	do_log(LOG_ERROR, LOG_STDOUT, __FILE__,		\
+					__FUNCTION__, __LINE__,			\
+					fmt, ##__VA_ARGS__);
+
+#define info(fmt, ...)		do_log(LOG_INFO, LOG_FILE, __FILE__, 		\
+					__FUNCTION__, __LINE__,			\
+					fmt, ##__VA_ARGS__);
+
+#define __info(fmt, ...)	do_log(LOG_INFO, LOG_STDOUT, __FILE__,		\
+					__FUNCTION__, __LINE__,			\
+					fmt, ##__VA_ARGS__);
 
 #endif
